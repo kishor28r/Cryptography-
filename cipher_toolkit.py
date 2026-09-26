@@ -5524,6 +5524,7 @@ class ClassicalCipherToolkit:
             2: None,
             3: None
         }
+        self.operation_history: List[Dict[str, Any]] = []
         self.last_result: Optional[Dict[str, Any]] = None
 
     @property
@@ -5624,8 +5625,26 @@ class ClassicalCipherToolkit:
             return self.enter_key_menu()
         return True
 
+    def _get_active_candidate(self, plaintext: str) -> Dict[str, Any]:
+        if self.active_cipher_id == 1:
+            params = f"Shift = {self.active_key}"
+        elif self.active_cipher_id == 2:
+            params = f"Keyword = '{self.active_key}'"
+        elif self.active_cipher_id == 3:
+            params = f"Rails = {self.active_key}"
+        else:
+            params = f"Key = {self.active_key}"
+
+        return {
+            "cipher": self.active_cipher_name,
+            "params": params,
+            "plaintext": plaintext,
+            "score": 1.0,
+            "rank_tier": 1
+        }
+
     def run_encrypt(self) -> None:
-        """Menu option 1: Encrypt plaintext and store result."""
+        """Menu option 1: Encrypt plaintext and store result in history."""
         if not self.ensure_key_set():
             return
 
@@ -5641,21 +5660,30 @@ class ClassicalCipherToolkit:
         elif self.active_cipher_id == 3:
             ciphertext = rail_fence_encrypt(plaintext, self.active_key)
 
-        self.last_result = {
-            "operation": "Encrypt",
+        res_entry = {
+            "sl_no": len(self.operation_history) + 1,
             "cipher": self.active_cipher_name,
-            "key": self.active_key,
-            "input_text": plaintext,
-            "output_text": ciphertext
+            "action": "Encrypt",
+            "key": str(self.active_key),
+            "input": plaintext,
+            "output": ciphertext
         }
+        self.operation_history.append(res_entry)
+        self.last_result = res_entry
 
         print("\n" + "-" * 40)
         print(f"[+] Encryption Successful!")
         print(f"Ciphertext: {ciphertext}")
         print("-" * 40)
 
+        exp_choice = input("\nWould you like a step-by-step explanation of how this was derived? (y/n): ").strip().lower()
+        if exp_choice in ("y", "yes"):
+            cand = self._get_active_candidate(plaintext)
+            report = {"has_matches": True, "candidates": [cand]}
+            self.display_explanation(ciphertext, report)
+
     def run_decrypt(self) -> None:
-        """Menu option 2: Decrypt ciphertext and store result."""
+        """Menu option 2: Decrypt ciphertext and store result in history."""
         if not self.ensure_key_set():
             return
 
@@ -5671,72 +5699,526 @@ class ClassicalCipherToolkit:
         elif self.active_cipher_id == 3:
             plaintext = rail_fence_decrypt(ciphertext, self.active_key)
 
-        self.last_result = {
-            "operation": "Decrypt",
+        res_entry = {
+            "sl_no": len(self.operation_history) + 1,
             "cipher": self.active_cipher_name,
-            "key": self.active_key,
-            "input_text": ciphertext,
-            "output_text": plaintext
+            "action": "Decrypt",
+            "key": str(self.active_key),
+            "input": ciphertext,
+            "output": plaintext
         }
+        self.operation_history.append(res_entry)
+        self.last_result = res_entry
 
         print("\n" + "-" * 40)
         print(f"[+] Decryption Successful!")
         print(f"Plaintext: {plaintext}")
         print("-" * 40)
 
+        exp_choice = input("\nWould you like a step-by-step explanation of how this was derived? (y/n): ").strip().lower()
+        if exp_choice in ("y", "yes"):
+            cand = self._get_active_candidate(plaintext)
+            report = {"has_matches": True, "candidates": [cand]}
+            self.display_explanation(ciphertext, report)
+
     def display_last_result(self) -> None:
-        """Menu option 5: Display last stored result."""
-        print("\n--- Stored Result ---")
-        if not self.last_result:
-            print("[i] No stored result yet. Perform an Encryption or Decryption operation first.")
+        """Menu option 5: Display full operation history table."""
+        if not self.operation_history:
+            print("\n" + "=" * 62)
+            print("                     OPERATION HISTORY                    ")
+            print("=" * 62)
+            print("No operations recorded yet")
+            print("=" * 62)
             return
 
-        res = self.last_result
-        print(f" Operation   : {res['operation']}")
-        print(f" Cipher Used : {res['cipher']}")
-        print(f" Key Used    : {res['key']}")
-        print(f" Input Text  : {res['input_text']}")
-        print(f" Output Text : {res['output_text']}")
+        w_sl = max(len("Sl No"), max(len(str(r["sl_no"])) for r in self.operation_history))
+        w_cipher = max(len("Cipher"), max(len(r["cipher"]) for r in self.operation_history))
+        w_action = max(len("Encrypt/Decrypt"), max(len(r["action"]) for r in self.operation_history))
+        w_key = max(len("Key Used"), max(len(str(r["key"])) for r in self.operation_history))
+        w_input = max(len("Input"), max(len(r["input"]) for r in self.operation_history))
+        w_output = max(len("Output"), max(len(r["output"]) for r in self.operation_history))
+
+        top_border = "+" + "-"*(w_sl+2) + "+" + "-"*(w_cipher+2) + "+" + "-"*(w_action+2) + "+" + "-"*(w_key+2) + "+" + "-"*(w_input+2) + "+" + "-"*(w_output+2) + "+"
+        header_line = f"| {'Sl No':<{w_sl}} | {'Cipher':<{w_cipher}} | {'Encrypt/Decrypt':<{w_action}} | {'Key Used':<{w_key}} | {'Input':<{w_input}} | {'Output':<{w_output}} |"
+        border_len = len(top_border)
+
+        print("\n" + "=" * border_len)
+        print("OPERATION HISTORY TABLE".center(border_len))
+        print("=" * border_len)
+        print(header_line)
+        print(top_border)
+        for r in self.operation_history:
+            row_str = f"| {r['sl_no']:<{w_sl}} | {r['cipher']:<{w_cipher}} | {r['action']:<{w_action}} | {r['key']:<{w_key}} | {r['input']:<{w_input}} | {r['output']:<{w_output}} |"
+            print(row_str)
+        print(top_border)
+
+    def display_explanation(self, ciphertext: str, report: Dict[str, Any]) -> None:
+        """Display step-by-step explanation breakdown of cryptanalysis result."""
+        if not report["has_matches"]:
+            fb = report["fallback"]
+            self._explain_statistical_fallback(ciphertext, fb)
+            return
+
+        cand = report["candidates"][0]
+        cipher = cand["cipher"]
+
+        if cipher == "Caesar Cipher":
+            self._explain_caesar(ciphertext, cand)
+        elif cipher == "Vigenère Cipher":
+            self._explain_vigenere(ciphertext, cand)
+        elif cipher == "Monoalphabetic Substitution":
+            self._explain_monoalphabetic(ciphertext, cand)
+        elif cipher == "Playfair Cipher":
+            self._explain_playfair(ciphertext, cand)
+        elif cipher == "Rail Fence Cipher":
+            self._explain_rail_fence(ciphertext, cand)
+        elif cipher == "Columnar Transposition":
+            self._explain_columnar(ciphertext, cand)
+        elif cipher == "Route Cipher":
+            self._explain_route(ciphertext, cand)
+        else:
+            self._explain_generic(ciphertext, cand)
+
+    def _explain_caesar(self, ciphertext: str, cand: Dict[str, Any]) -> None:
+        params_str = cand["params"]
+        shift = 0
+        if "Shift = " in params_str:
+            try:
+                shift = int(params_str.split("Shift = ")[1].split()[0])
+            except Exception:
+                pass
+        pt = cand["plaintext"]
+
+        print("\n" + "=" * 65)
+        print("           STEP-BY-STEP BREAKDOWN: CAESAR CIPHER           ")
+        print("=" * 65)
+        print(f" Cipher Type     : Caesar Cipher")
+        print(f" Encryption Shift: +{shift}")
+        print(f" Decryption Shift: -{shift}")
+        print(f" Plaintext       : \"{pt}\"")
+        print(f" Ciphertext      : \"{ciphertext}\"")
+        print("-" * 65)
+        print(" Character-by-Character Transformation (Plaintext -> Ciphertext):")
+        print("-" * 65)
+
+        for i, (p_char, c_char) in enumerate(zip(pt, ciphertext), 1):
+            if p_char.isalpha():
+                p_upper = p_char.upper()
+                c_upper = c_char.upper()
+                p_val = ord(p_upper) - ord('A')
+                c_val = ord(c_upper) - ord('A')
+                print(f"  [{i:02d}] Plaintext '{p_char}' (pos {p_val:02d}) -> Ciphertext '{c_char}' (pos {c_val:02d}) [Shift +{shift}]")
+            else:
+                print(f"  [{i:02d}] '{p_char}' -> '{c_char}' (Non-alphabetic character preserved)")
+        print("=" * 65)
+
+    def _explain_vigenere(self, ciphertext: str, cand: Dict[str, Any]) -> None:
+        params_str = cand["params"]
+        key = ""
+        if "Keyword = '" in params_str:
+            key = params_str.split("Keyword = '")[1].split("'")[0]
+        pt = cand["plaintext"]
+        clean_k = [c.upper() for c in key if c.isalpha()]
+        key_len = len(clean_k) if clean_k else 1
+
+        print("\n" + "=" * 65)
+        print("          STEP-BY-STEP BREAKDOWN: VIGENÈRE CIPHER          ")
+        print("=" * 65)
+        print(f" Cipher Type : Vigenère Cipher")
+        print(f" Keyword     : \"{key}\" (Length: {key_len})")
+        print(f" Plaintext   : \"{pt}\"")
+        print(f" Ciphertext  : \"{ciphertext}\"")
+        print("-" * 65)
+        print(" Letter Transformation & Driven Shift (Plaintext + Key -> Ciphertext):")
+        print("-" * 65)
+
+        k_idx = 0
+        for i, (p_char, c_char) in enumerate(zip(pt, ciphertext), 1):
+            if p_char.isalpha():
+                k_char = clean_k[k_idx % key_len]
+                shift = ord(k_char) - ord('A')
+                print(f"  [{i:02d}] Plaintext '{p_char}' + Key '{k_char}' (Shift +{shift:02d}) -> Ciphertext '{c_char}'")
+                k_idx += 1
+            else:
+                print(f"  [{i:02d}] '{p_char}' -> '{c_char}' (Non-alphabetic character preserved)")
+        print("=" * 65)
+
+    def _explain_monoalphabetic(self, ciphertext: str, cand: Dict[str, Any]) -> None:
+        pt = cand["plaintext"]
+        letters = [c.upper() for c in ciphertext if c.isalpha()]
+        counts = {}
+        for l in letters:
+            counts[l] = counts.get(l, 0) + 1
+        sorted_cipher_letters = [item[0] for item in sorted(counts.items(), key=lambda x: x[1], reverse=True)]
+
+        sub_map = {}
+        used_eng = set()
+        for i, c_char in enumerate(sorted_cipher_letters):
+            if i < len(ENGLISH_RANK):
+                sub_map[c_char] = ENGLISH_RANK[i]
+                used_eng.add(ENGLISH_RANK[i])
+        remaining_eng = [e for e in ENGLISH_RANK if e not in used_eng]
+        rem_idx = 0
+        for i in range(26):
+            c_char = chr(ord('A') + i)
+            if c_char not in sub_map:
+                sub_map[c_char] = remaining_eng[rem_idx]
+                rem_idx += 1
+
+        pt_to_ct = {v: k for k, v in sub_map.items()}
+
+        print("\n" + "=" * 65)
+        print("    STEP-BY-STEP BREAKDOWN: MONOALPHABETIC SUBSTITUTION    ")
+        print("=" * 65)
+        print(f" Cipher Type : Monoalphabetic Substitution")
+        print(f" Method      : Frequency Rank Mapping (Ciphertext Rank -> English Rank)")
+        print(f" Plaintext   : \"{pt}\"")
+        print(f" Ciphertext  : \"{ciphertext}\"")
+        print("-" * 65)
+        print(" Active Frequency Substitution Mappings:")
+        active_pairs = [f"{p}->{pt_to_ct[p]}" for p in sorted(pt_to_ct.keys()) if p in [c.upper() for c in pt if c.isalpha()]]
+        if active_pairs:
+            print("  " + ", ".join(active_pairs[:15]))
+        print("-" * 65)
+        print(" Letter-by-Letter Transformation (Plaintext -> Ciphertext):")
+        print("-" * 65)
+
+        for i, (p_char, c_char) in enumerate(zip(pt, ciphertext), 1):
+            if p_char.isalpha():
+                print(f"  [{i:02d}] Plaintext '{p_char}' -> Ciphertext '{c_char}' (Mapped via frequency rank)")
+            else:
+                print(f"  [{i:02d}] '{p_char}' -> '{c_char}' (Non-alphabetic character preserved)")
+        print("=" * 65)
+
+    def _explain_playfair(self, ciphertext: str, cand: Dict[str, Any]) -> None:
+        params_str = cand["params"]
+        key = ""
+        if "Keyword = '" in params_str:
+            key = params_str.split("Keyword = '")[1].split("'")[0]
+        pt = cand["plaintext"]
+
+        grid = build_playfair_grid(key)
+        pos = {grid[r][c]: (r, c) for r in range(5) for c in range(5)}
+
+        print("\n" + "=" * 65)
+        print("          STEP-BY-STEP BREAKDOWN: PLAYFAIR CIPHER          ")
+        print("=" * 65)
+        print(f" Cipher Type : Playfair Cipher (5x5 Grid)")
+        print(f" Keyword     : \"{key}\" (J merged into I)")
+        print(f" Plaintext   : \"{pt}\"")
+        print(f" Ciphertext  : \"{ciphertext}\"")
+        print("-" * 65)
+        print(" 5x5 Playfair Grid Matrix:")
+        print("  +---+---+---+---+---+")
+        for r in range(5):
+            row_str = " | ".join(grid[r])
+            print(f"  | {row_str} |")
+        print("  +---+---+---+---+---+")
+        print("-" * 65)
+        print(" Digraph Transformation Breakdown (Decryption Rules):")
+        print("-" * 65)
+
+        clean_ct_str = "".join([c.upper() for c in ciphertext if c.isalpha()]).replace('J', 'I')
+        if len(clean_ct_str) % 2 != 0:
+            clean_ct_str = clean_ct_str[:-1]
+
+        clean_pt_str = "".join([c.upper() for c in pt if c.isalpha()]).replace('J', 'I')
+
+        digraph_idx = 1
+        for i in range(0, len(clean_ct_str) - 1, 2):
+            c1, c2 = clean_ct_str[i], clean_ct_str[i+1]
+            p1 = clean_pt_str[i] if i < len(clean_pt_str) else '?'
+            p2 = clean_pt_str[i+1] if i+1 < len(clean_pt_str) else '?'
+
+            r1, col1 = pos.get(c1, (0, 0))
+            r2, col2 = pos.get(c2, (0, 0))
+
+            if r1 == r2:
+                rule = f"Same Row {r1} (Shift Left)"
+            elif col1 == col2:
+                rule = f"Same Column {col1} (Shift Up)"
+            else:
+                rule = f"Rectangle Box Rule: ({r1},{col1}) & ({r2},{col2})"
+
+            print(f"  [Digraph {digraph_idx:02d}] Plaintext '{p1}{p2}' -> Ciphertext '{c1}{c2}' | Decryption Rule: {rule}")
+            digraph_idx += 1
+        print("=" * 65)
+
+    def _explain_rail_fence(self, ciphertext: str, cand: Dict[str, Any]) -> None:
+        params_str = cand["params"]
+        rails = 2
+        if "Rails = " in params_str:
+            try:
+                rails = int(params_str.split("Rails = ")[1].split()[0])
+            except Exception:
+                pass
+        pt = cand["plaintext"]
+        n = len(pt)
+
+        grid = [['.' for _ in range(n)] for _ in range(rails)]
+        rail = 0
+        direction = 1
+        for col in range(n):
+            grid[rail][col] = pt[col]
+            if rail == 0:
+                direction = 1
+            elif rail == rails - 1:
+                direction = -1
+            rail += direction
+
+        print("\n" + "=" * 65)
+        print("         STEP-BY-STEP BREAKDOWN: RAIL FENCE CIPHER         ")
+        print("=" * 65)
+        print(f" Cipher Type     : Rail Fence Cipher")
+        print(f" Number of Rails : {rails}")
+        print(f" Plaintext       : \"{pt}\"")
+        print(f" Ciphertext      : \"{ciphertext}\"")
+        print("-" * 65)
+        print(f" Zigzag Rail Grid Layout ({rails} Rails):")
+        print("-" * 65)
+        for r in range(rails):
+            row_str = " ".join(grid[r])
+            print(f" Rail {r} : {row_str}")
+        print("-" * 65)
+        print(" Transformation Explanation:")
+        print("  1. Plaintext characters are placed along the zigzag rail path left-to-right.")
+        print("  2. Ciphertext is formed by reading characters row-by-row (Rail 0, then Rail 1, ...).")
+        print("  3. Decryption places Ciphertext characters on the rail slots and reads along the zigzag.")
+        print("=" * 65)
+
+    def _explain_columnar(self, ciphertext: str, cand: Dict[str, Any]) -> None:
+        params_str = cand["params"]
+        pt = cand["plaintext"]
+
+        perm = ()
+        kw_str = ""
+        if "Perm = (" in params_str:
+            try:
+                p_part = params_str.split("Perm = (")[1].split(")")[0]
+                perm = tuple(int(x.strip()) for x in p_part.split(","))
+            except Exception:
+                pass
+        if "Keyword = '" in params_str:
+            kw_str = params_str.split("Keyword = '")[1].split("'")[0]
+
+        k = len(perm) if perm else 1
+        n = len(pt)
+
+        print("\n" + "=" * 65)
+        print("     STEP-BY-STEP BREAKDOWN: COLUMNAR TRANSPOSITION        ")
+        print("=" * 65)
+        print(f" Cipher Type  : Columnar Transposition Cipher")
+        if kw_str:
+            print(f" Keyword      : \"{kw_str}\"")
+        print(f" Columns (K)  : {k}")
+        print(f" Read Perm    : {perm}")
+        print(f" Plaintext    : \"{pt}\"")
+        print(f" Ciphertext   : \"{ciphertext}\"")
+        print("-" * 65)
+
+        if k > 0:
+            base_len = n // k
+            rem = n % k
+            max_rows = base_len + (1 if rem > 0 else 0)
+
+            grid = []
+            idx = 0
+            for r in range(max_rows):
+                row = []
+                for c in range(k):
+                    if idx < n:
+                        row.append(pt[idx])
+                        idx += 1
+                    else:
+                        row.append(" ")
+                grid.append(row)
+
+            print(" Column Grid Layout:")
+            if kw_str and len(kw_str) == k:
+                kw_header = "   ".join([c.upper() for c in kw_str])
+                print(f"  Key Letters     :   {kw_header}")
+            col_header = "   ".join([str(c) for c in range(k)])
+            perm_header = "   ".join([str(p) for p in perm])
+            print(f"  Column Index    :   {col_header}")
+            print(f"  Read Order Rank :   {perm_header}")
+            print("  " + "-" * (k * 4 + 18))
+            for r_idx, row in enumerate(grid):
+                r_str = "   ".join(row)
+                print(f"  Row {r_idx:<2d}          :   {r_str}")
+            print("-" * 65)
+            print(" Transformation Explanation:")
+            print("  1. Plaintext is written into the grid row-by-row from left to right.")
+            print("  2. Ciphertext is generated by reading columns in order of Read Order Rank.")
+            print("  3. Decryption re-assembles the columns into grid and reads row-by-row.")
+        print("=" * 65)
+
+    def _explain_route(self, ciphertext: str, cand: Dict[str, Any]) -> None:
+        params_str = cand["params"]
+        pt = cand["plaintext"]
+
+        rows, cols = 0, 0
+        pattern = "Standard"
+        if "Grid = " in params_str:
+            try:
+                dim_str = params_str.split("Grid = ")[1].split(",")[0]
+                rows, cols = map(int, dim_str.split("x"))
+            except Exception:
+                pass
+        if "Pattern = " in params_str:
+            pattern = params_str.split("Pattern = ")[1].split("(")[0].strip()
+            if " (trailing" in params_str:
+                pattern = params_str.split("Pattern = ")[1].split(" (trailing")[0].strip()
+
+        print("\n" + "=" * 65)
+        print("            STEP-BY-STEP BREAKDOWN: ROUTE CIPHER           ")
+        print("=" * 65)
+        print(f" Cipher Type : Route Cipher")
+        print(f" Grid Size   : {rows} Rows x {cols} Cols")
+        print(f" Pattern     : {pattern}")
+        print(f" Plaintext   : \"{pt}\"")
+        print(f" Ciphertext  : \"{ciphertext}\"")
+        print("-" * 65)
+
+        if rows * cols == len(ciphertext) or rows * cols == len(pt):
+            n = len(ciphertext)
+            grid = [['' for _ in range(cols)] for _ in range(rows)]
+
+            if "Column-by-Column (Top-Down)" in params_str:
+                idx = 0
+                for c in range(cols):
+                    for r in range(rows):
+                        if idx < n:
+                            grid[r][c] = ciphertext[idx]
+                            idx += 1
+            elif "Column-by-Column (Bottom-Up)" in params_str:
+                idx = 0
+                for c in range(cols):
+                    for r in range(rows - 1, -1, -1):
+                        if idx < n:
+                            grid[r][c] = ciphertext[idx]
+                            idx += 1
+            elif "Boustrophedon (Zigzag)" in params_str:
+                idx = 0
+                for r in range(rows):
+                    if r % 2 == 0:
+                        for c in range(cols):
+                            if idx < n:
+                                grid[r][c] = ciphertext[idx]
+                                idx += 1
+                    else:
+                        for c in range(cols - 1, -1, -1):
+                            if idx < n:
+                                grid[r][c] = ciphertext[idx]
+                                idx += 1
+            else:
+                idx = 0
+                for r in range(rows):
+                    for c in range(cols):
+                        if idx < n:
+                            grid[r][c] = ciphertext[idx]
+                            idx += 1
+
+            print(f" Route Grid Layout ({rows} Rows x {cols} Cols):")
+            top_b = "  +" + "---+" * cols
+            print(top_b)
+            for r in range(rows):
+                r_str = " | ".join(grid[r][c] if grid[r][c] else ' ' for c in range(cols))
+                print(f"  | {r_str} |")
+            print(top_b)
+            print("-" * 65)
+            print(" Transformation Explanation:")
+            print(f"  1. Ciphertext is loaded into grid according to pattern: {pattern}")
+            print("  2. Reading grid row-by-row reconstructs the Plaintext.")
+        print("=" * 65)
+
+    def _explain_statistical_fallback(self, ciphertext: str, fb: Dict[str, Any]) -> None:
+        print("\n" + "=" * 65)
+        print("  STEP-BY-STEP BREAKDOWN: STATISTICAL CRYPTANALYSIS FALLBACK   ")
+        print("=" * 65)
+        print(f" Analysis Result : Statistical Fallback (No Dictionary Matches)")
+        print(f" Guessed Cipher  : {fb.get('guess', 'Unknown')}")
+        print(f" Confidence      : {fb.get('confidence', 'Low')}")
+        print("-" * 65)
+        print(" Reasoning & Deductions:")
+        print(f"  {fb.get('reasoning', 'N/A')}")
+        print("-" * 65)
+        details = fb.get("details", {})
+        if details:
+            print(" Statistical Metrics Breakdown:")
+            print(f"  - Total Alphabetic Letters : {details.get('total_letters', 'N/A')}")
+            print(f"  - Index of Coincidence (IC): {details.get('index_of_coincidence', 'N/A')}")
+            print(f"    (Reference: Standard English IC ~0.0667, Random Text IC ~0.0385)")
+            top_lets = details.get("top_letters", [])
+            if top_lets:
+                top_str = ", ".join(f"'{char}': {cnt}" for char, cnt in top_lets)
+                print(f"  - Top Ciphertext Frequencies: {top_str}")
+            if "best_caesar_shift" in details:
+                print(f"  - Best Candidate Caesar Shift: {details.get('best_caesar_shift')}")
+        print("=" * 65)
+
+    def _explain_generic(self, ciphertext: str, cand: Dict[str, Any]) -> None:
+        print("\n" + "=" * 65)
+        print("            STEP-BY-STEP BREAKDOWN: GENERAL CIPHER           ")
+        print("=" * 65)
+        print(f" Cipher Type : {cand['cipher']}")
+        print(f" Parameters  : {cand['params']}")
+        print(f" Plaintext   : \"{cand['plaintext']}\"")
+        print(f" Ciphertext  : \"{ciphertext}\"")
+        print("=" * 65)
 
     def run_cryptanalysis(self) -> None:
         """
         Menu option 7: Brute-force cryptanalysis across 7 classical ciphers
-        with ranked validity reports.
+        with interactive breakdown explanation and loop.
         """
-        print("\n--- Exhaustive Cryptanalysis (7 Classical Ciphers) ---")
-        ciphertext = input("Enter Ciphertext to analyze: ")
+        while True:
+            print("\n--- Exhaustive Cryptanalysis (7 Classical Ciphers) ---")
+            print("[i] Enter 'back' or '0' to return to the main menu.")
+            ciphertext = input("Enter Ciphertext to analyze: ").strip()
 
-        if not ciphertext.strip():
-            print("[-] Error: Input ciphertext cannot be empty.")
-            return
+            if ciphertext.lower() in ("0", "back"):
+                print("\n[+] Returning to main menu.")
+                break
 
-        report = guess_cipher_type_brute_force(ciphertext)
+            if not ciphertext:
+                print("[-] Error: Input ciphertext cannot be empty.")
+                continue
 
-        print("\n" + "=" * 62)
-        print("                 CRYPTANALYSIS REPORT                 ")
-        print("=" * 62)
-        print(f" Analyzed Ciphertext : \"{ciphertext}\"")
+            report = guess_cipher_type_brute_force(ciphertext)
 
-        if report["has_matches"]:
-            candidates = report["candidates"]
-            print(f" Matches Found       : {len(candidates)} candidate match(es)")
+            print("\n" + "=" * 62)
+            print("                 CRYPTANALYSIS REPORT                 ")
             print("=" * 62)
+            print(f" Analyzed Ciphertext : \"{ciphertext}\"")
 
-            for idx, cand in enumerate(candidates, 1):
-                match_type = "Exact Match" if cand["rank_tier"] == 1 else "Frequency Approx Match"
-                print(f" [Rank {idx}] {cand['cipher']}")
-                print(f"   Key / Params : {cand['params']}")
-                print(f"   Confidence   : {match_type} (Score: {cand['score']:.2f})")
-                print(f"   Plaintext    : \"{cand['plaintext']}\"")
+            if report["has_matches"]:
+                candidates = report["candidates"]
+                print(f" Matches Found       : {len(candidates)} candidate match(es)")
+                print("=" * 62)
+
+                for idx, cand in enumerate(candidates, 1):
+                    match_type = "Exact Match" if cand["rank_tier"] == 1 else "Frequency Approx Match"
+                    print(f" [Rank {idx}] {cand['cipher']}")
+                    print(f"   Key / Params : {cand['params']}")
+                    print(f"   Confidence   : {match_type} (Score: {cand['score']:.2f})")
+                    print(f"   Plaintext    : \"{cand['plaintext']}\"")
+                    print("-" * 62)
+            else:
+                fb = report["fallback"]
                 print("-" * 62)
-        else:
-            fb = report["fallback"]
-            print("-" * 62)
-            print(" Statistical Fallback Analysis:")
-            print(f" Guessed Cipher Type : {fb['guess']}")
-            print(f" Confidence Level    : {fb['confidence']}")
-            print(f" Reasoning           : {fb['reasoning']}")
-            print("=" * 62)
+                print(" Statistical Fallback Analysis:")
+                print(f" Guessed Cipher Type : {fb['guess']}")
+                print(f" Confidence Level    : {fb['confidence']}")
+                print(f" Reasoning           : {fb['reasoning']}")
+                print("=" * 62)
+
+            exp_choice = input("\nWould you like a step-by-step explanation of how this was derived? (y/n): ").strip().lower()
+
+            if exp_choice in ("y", "yes"):
+                self.display_explanation(ciphertext, report)
+                break
+            else:
+                print("\n[i] Skipping explanation.")
 
     def run(self) -> None:
         """Main application menu loop."""
@@ -5832,6 +6314,45 @@ class ToolkitSelfTests(unittest.TestCase):
         self.assertTrue(report["has_matches"])
         ciphers = [c["cipher"] for c in report["candidates"]]
         self.assertIn("Vigenère Cipher", ciphers)
+
+    def test_operation_history(self):
+        app = ClassicalCipherToolkit()
+        self.assertEqual(len(app.operation_history), 0)
+        app.active_cipher_id = 1
+        app.keys[1] = 5
+        app.operation_history.append({
+            "sl_no": 1,
+            "cipher": "Caesar Cipher",
+            "action": "Encrypt",
+            "key": "5",
+            "input": "HELLO",
+            "output": "MJQQT"
+        })
+        app.operation_history.append({
+            "sl_no": 2,
+            "cipher": "Vigenère Cipher",
+            "action": "Decrypt",
+            "key": "LEMON",
+            "input": "LXFOPV",
+            "output": "ATTACK"
+        })
+        self.assertEqual(len(app.operation_history), 2)
+        self.assertEqual(app.operation_history[0]["sl_no"], 1)
+        self.assertEqual(app.operation_history[1]["sl_no"], 2)
+
+    def test_display_explanations(self):
+        app = ClassicalCipherToolkit()
+        cand_caesar = {"cipher": "Caesar Cipher", "params": "Shift = 5", "plaintext": "HELLO", "score": 1.0, "rank_tier": 1}
+        report_caesar = {"has_matches": True, "candidates": [cand_caesar], "fallback": None}
+        app.display_explanation("MJQQT", report_caesar)
+
+        cand_vig = {"cipher": "Vigenère Cipher", "params": "Keyword = 'LEMON'", "plaintext": "ATTACK", "score": 1.0, "rank_tier": 1}
+        report_vig = {"has_matches": True, "candidates": [cand_vig], "fallback": None}
+        app.display_explanation("LXFOPV", report_vig)
+
+        cand_rf = {"cipher": "Rail Fence Cipher", "params": "Rails = 3", "plaintext": "DEFEND THE EAST WALL", "score": 1.0, "rank_tier": 1}
+        report_rf = {"has_matches": True, "candidates": [cand_rf], "fallback": None}
+        app.display_explanation("DNHAWEEDTEES ALF  TL", report_rf)
 
 
 # =====================================================================
